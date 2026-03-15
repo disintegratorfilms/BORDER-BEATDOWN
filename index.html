@@ -328,6 +328,10 @@ class BootScene extends Phaser.Scene {
 class CutsceneScene extends Phaser.Scene {
   constructor(){ super('CutsceneScene'); }
 
+  preload(){
+    if(!this.cache.audio.exists('theme1')) this.load.audio('theme1','assets/theme_1.mp3');
+    this.load.image('tutorial','assets/tutorial.png');
+  }
   create(){
     const {width,height}=this.scale;
     this.game.canvas.style.pointerEvents='';
@@ -438,13 +442,75 @@ class CutsceneScene extends Phaser.Scene {
   }
 
   _finish(){
-    // cs3 done — fade music, start fight
+    // cs3 done — fade music out, transition to tutorial
     if(this._csMusic&&this._csMusic.isPlaying){
       this.tweens.add({targets:this._csMusic,volume:0,duration:1000});
     }
     this.cameras.main.fadeOut(800,0,0,0);
     this.time.delayedCall(900,()=>{
-      this.scene.start('ChicosFightScene');
+      this._showTutorial();
+    });
+  }
+
+  _showTutorial(){
+    const {width,height}=this.scale;
+    this.cameras.main.fadeIn(600,0,0,0);
+
+    // Dark background
+    const bg=this.add.rectangle(0,0,width,height,0x000000,0.88)
+      .setOrigin(0,0).setDepth(0);
+
+    // Tutorial image — 75% of screen, centered, slightly above center
+    const imgW=width*0.75;
+    const imgH=imgW*(1024/1536); // maintain aspect ratio
+    const imgX=width/2;
+    const imgY=height*0.46;
+    const tut=this.add.image(imgX,imgY,'tutorial')
+      .setDisplaySize(imgW,imgH)
+      .setOrigin(0.5,0.5).setDepth(1).setAlpha(0);
+    this.tweens.add({targets:tut,alpha:1,duration:400});
+
+    // Keyboard hint — small text just below the image, not covering it
+    const hintY=imgY+imgH/2+22;
+    const hint=this.add.text(width/2, hintY,
+      'KEYBOARD:  F = Attack    G = Special    Space = Jump    V = Jump Kick',
+      {
+        fontFamily:'"Arial",sans-serif',
+        fontSize:'22px',
+        color:'#dddddd',
+        stroke:'#000000',
+        strokeThickness:4,
+        align:'center'
+      }
+    ).setOrigin(0.5,0).setDepth(2).setAlpha(0);
+    this.tweens.add({targets:hint,alpha:1,duration:400,delay:200});
+
+    // Tap/click to skip prompt — bottom center
+    const tapPrompt=this.add.text(width/2, height-32,
+      'TAP ANYWHERE TO START',
+      {
+        fontFamily:'"Arial Black",Arial,sans-serif',
+        fontSize:'26px',
+        color:'#ffdd00',
+        stroke:'#000000',
+        strokeThickness:5
+      }
+    ).setOrigin(0.5,1).setDepth(2).setAlpha(0);
+    this.tweens.add({targets:tapPrompt,alpha:0.3,duration:500,delay:600,
+      onComplete:()=>{ this.tweens.add({targets:tapPrompt,alpha:1,duration:500,yoyo:true,repeat:-1}); }
+    });
+
+    // Tap or key to proceed
+    let gone=false;
+    const proceed=()=>{
+      if(gone) return; gone=true;
+      this.cameras.main.fadeOut(500,0,0,0);
+      this.time.delayedCall(550,()=>{ this.scene.start('ChicosFightScene'); });
+    };
+    // Small delay so it doesn't fire immediately from the last scene tap
+    this.time.delayedCall(400,()=>{
+      this.input.once('pointerdown',proceed);
+      this.input.keyboard.once('keydown',proceed);
     });
   }
 }
@@ -699,19 +765,16 @@ class ChicosFightScene extends Phaser.Scene {
     /* ── Enemies ── */
     this.enemies=[];
 
-    /* ── Music — start or continue theme_1 ── */
-    this.sound.getAll().forEach(s=>{ if(s.key!=='theme1') s.stop(); });
-    const existingTheme=this.sound.get('theme1');
-    if(existingTheme&&existingTheme.isPlaying){
-      this._music=existingTheme;
-    } else {
-      try{
-        if(existingTheme) this.sound.remove(existingTheme);
-        this._music=this.sound.add('theme1',{loop:true,volume:0});
-        this._music.play();
-        this.tweens.add({targets:this._music,volume:0.65,duration:1500});
-      }catch(e){ console.warn('Theme start failed:',e); }
-    }
+    /* ── Music — always start theme_1 fresh ── */
+    this.sound.getAll().forEach(s=>s.stop());
+    try{
+      // Remove any stale instance first
+      const stale=this.sound.get('theme1');
+      if(stale) this.sound.remove(stale);
+      this._music=this.sound.add('theme1',{loop:true,volume:0});
+      this._music.play();
+      this.tweens.add({targets:this._music,volume:0.65,duration:1500});
+    }catch(e){ console.warn('Theme start failed:',e); }
 
     /* ── Combo system ── */
     this._combo=0;

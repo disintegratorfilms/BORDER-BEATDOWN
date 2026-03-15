@@ -193,6 +193,11 @@ class BootScene extends Phaser.Scene {
   preload(){
     this.load.image('title_bg','assets/title.png');
     this.load.audio('theme1','assets/theme_1.mp3');
+    this.load.image('cs1','assets/cs1.png');
+    this.load.image('cs2','assets/cs2.png');
+    this.load.image('cs3','assets/cs3.png');
+    this.load.audio('cs_music','assets/cutscene_music.mp3');
+    this.load.audio('cs_glass','assets/audio-brick-thrown-through-a-glass-window.mp3');
   }
   create(){
     const {width,height}=this.scale;
@@ -239,13 +244,19 @@ class BootScene extends Phaser.Scene {
     const img=this.children.list[0];
     this.tweens.add({targets:img,scaleX:img.scaleX*1.015,scaleY:img.scaleY*1.015,duration:3000,yoyo:true,repeat:-1,ease:'Sine.InOut'});
 
-    // Start function — safe, no delayedCall wrapper so it's always ready
+    // Start function — fade music, go to cutscene
     const start=()=>{
       if(this._started) return;
       this._started=true;
       window._gtrack('game_start',{method:'main_menu'});
+      // Fade out theme and screen together
+      if(window._theme1&&window._theme1.isPlaying){
+        this.tweens.add({targets:window._theme1,volume:0,duration:700});
+      }
       this.cameras.main.fadeOut(700,0,0,0);
-      this.time.delayedCall(750,()=>{ this.scene.start('ChicosFightScene',{music:window._theme1}); });
+      this.time.delayedCall(750,()=>{
+        this.scene.start('CutsceneScene');
+      });
     };
     // Register input immediately — no delay
     this.input.keyboard.on('keydown',(e)=>{ if(e.key!=='`') start(); });
@@ -280,8 +291,9 @@ class BootScene extends Phaser.Scene {
     const goFight=()=>{
       if(this._started) return; this._started=true;
       window._gtrack('game_start',{method:'dev_menu_fight'});
+      if(window._theme1&&window._theme1.isPlaying) this.tweens.add({targets:window._theme1,volume:0,duration:600});
       this.cameras.main.fadeOut(600,0,0,0);
-      this.time.delayedCall(650,()=>{ this.scene.start('ChicosFightScene',{music:window._theme1}); });
+      this.time.delayedCall(650,()=>{ this.scene.start('ChicosFightScene'); });
     };
     const goBoss=()=>{
       if(this._started) return; this._started=true;
@@ -306,6 +318,133 @@ class BootScene extends Phaser.Scene {
       document.getElementById('bootDevPanel')?.remove();
       window.removeEventListener('keydown',_devKeyHandler);
       window._devKeyHandler=null;
+    });
+  }
+}
+
+/* =====================================================================
+   CUTSCENE SCENE
+===================================================================== */
+class CutsceneScene extends Phaser.Scene {
+  constructor(){ super('CutsceneScene'); }
+
+  create(){
+    const {width,height}=this.scale;
+    this.game.canvas.style.pointerEvents='';
+    this._step=0; // 0=cs1, 1=cs2, 2=cs3, 3=done
+    this._advancing=false;
+
+    // Black base
+    this.add.rectangle(0,0,width,height,0x000000).setOrigin(0,0).setDepth(0);
+
+    // Preload cutscene music ref
+    this._csMusic=this.sound.add('cs_music',{loop:false,volume:0});
+
+    // Build skip button — DOM overlay, lower right
+    this._skipBtn=document.createElement('div');
+    this._skipBtn.id='csSkipBtn';
+    this._skipBtn.textContent='SKIP ▶';
+    this._skipBtn.style.cssText=`
+      position:fixed;bottom:32px;right:40px;z-index:9999;
+      font-family:"Arial Black",Arial,sans-serif;font-size:28px;font-weight:900;
+      color:#ffffff;background:#1a55cc;
+      padding:14px 32px;border-radius:8px;
+      border:3px solid #4488ff;
+      cursor:pointer;pointer-events:auto;touch-action:manipulation;
+      user-select:none;letter-spacing:2px;
+      box-shadow:0 4px 16px rgba(0,0,80,0.6);
+      transition:background 0.15s;
+    `;
+    this._skipBtn.addEventListener('pointerover',()=>{ this._skipBtn.style.background='#2266ee'; });
+    this._skipBtn.addEventListener('pointerout', ()=>{ this._skipBtn.style.background='#1a55cc'; });
+    this._skipBtn.addEventListener('pointerdown',(e)=>{
+      e.stopPropagation();
+      this._advance();
+    },{passive:false});
+    document.body.appendChild(this._skipBtn);
+
+    this.events.once('shutdown',()=>{
+      document.getElementById('csSkipBtn')?.remove();
+      if(this._csMusic&&this._csMusic.isPlaying) this._csMusic.stop();
+    });
+
+    // Start with cs1
+    this._showPanel('cs1',()=>this._showPanel('cs2',()=>this._showPanel('cs3',()=>this._finish())));
+  }
+
+  _showPanel(key, onDone){
+    const {width,height}=this.scale;
+    this._advancing=false;
+    this._onDone=onDone;
+
+    // Destroy previous panel
+    if(this._panel){ this._panel.destroy(); this._panel=null; }
+    if(this._zoomTween){ this._zoomTween.stop(); this._zoomTween=null; }
+
+    // Create image — fill screen, slight oversized for zoom headroom
+    const img=this.add.image(width/2,height/2,key)
+      .setDisplaySize(width*1.12,height*1.12)
+      .setOrigin(0.5,0.5).setDepth(1).setAlpha(0);
+    this._panel=img;
+
+    // Cutscene music — start on cs1, already fading in
+    if(key==='cs1'){
+      this._csMusic.play();
+      this.tweens.add({targets:this._csMusic,volume:0.75,duration:1000});
+    }
+
+    // Glass break on cs2 — fire 600ms after it appears
+    if(key==='cs2'){
+      this.time.delayedCall(600,()=>{
+        try{ this.sound.play('cs_glass',{volume:0.9}); }catch(e){}
+      });
+    }
+
+    // Hold durations: cs1=4s, cs2=4s, cs3=5s
+    const holdMs=key==='cs3'?5000:4000;
+
+    // Fade in
+    this.tweens.add({targets:img,alpha:1,duration:1000,onComplete:()=>{
+      // Zoom tween — 1.0 → 1.08 over hold+fade duration
+      this._zoomTween=this.tweens.add({
+        targets:img,
+        displayWidth:width*1.12*1.08,
+        displayHeight:height*1.12*1.08,
+        duration:holdMs+800,
+        ease:'Linear'
+      });
+      // Hold then fade out
+      this.time.delayedCall(holdMs,()=>{
+        if(this._advancing) return; // skip already triggered
+        this._fadeOutPanel(onDone);
+      });
+    }});
+  }
+
+  _fadeOutPanel(onDone){
+    if(!this._panel) return;
+    this._advancing=true;
+    if(this._zoomTween){ this._zoomTween.stop(); this._zoomTween=null; }
+    this.tweens.add({targets:this._panel,alpha:0,duration:800,onComplete:()=>{
+      if(this._panel){ this._panel.destroy(); this._panel=null; }
+      if(onDone) onDone();
+    }});
+  }
+
+  _advance(){
+    // Skip button — advance current panel immediately to next
+    if(this._advancing) return;
+    this._fadeOutPanel(this._onDone);
+  }
+
+  _finish(){
+    // cs3 done — fade music, start fight
+    if(this._csMusic&&this._csMusic.isPlaying){
+      this.tweens.add({targets:this._csMusic,volume:0,duration:1000});
+    }
+    this.cameras.main.fadeOut(800,0,0,0);
+    this.time.delayedCall(900,()=>{
+      this.scene.start('ChicosFightScene');
     });
   }
 }
@@ -559,15 +698,19 @@ class ChicosFightScene extends Phaser.Scene {
     /* ── Enemies ── */
     this.enemies=[];
 
-    /* ── Music — continue theme_1 from title or start fresh ── */
-    if(this._incomingMusic&&this._incomingMusic.isPlaying){
-      this._music=this._incomingMusic; // already playing, just keep it
+    /* ── Music — start or continue theme_1 ── */
+    this.sound.getAll().forEach(s=>{ if(s.key!=='theme1') s.stop(); });
+    const existingTheme=this.sound.get('theme1');
+    if(existingTheme&&existingTheme.isPlaying){
+      this._music=existingTheme;
     } else {
-      this.sound.getAll().forEach(s=>s.stop());
-      this._music=this.sound.add('theme1',{loop:true,volume:0.65});
-      this._music.play();
+      try{
+        if(existingTheme) this.sound.remove(existingTheme);
+        this._music=this.sound.add('theme1',{loop:true,volume:0});
+        this._music.play();
+        this.tweens.add({targets:this._music,volume:0.65,duration:1500});
+      }catch(e){ console.warn('Theme start failed:',e); }
     }
-    this.events.once('shutdown',()=>{ /* music continues to boss scene */ });
 
     /* ── Combo system ── */
     this._combo=0;
@@ -2183,7 +2326,7 @@ new Phaser.Game({
   input: { activePointers: 3, keyboard: true },
   disableContextMenu: true,
   canvasStyle: 'display:block;outline:none;',
-  scene: [BootScene, ChicosFightScene, ChicosBossScene]
+  scene: [BootScene, CutsceneScene, ChicosFightScene, ChicosBossScene]
 });
 </script>
 </body>

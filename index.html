@@ -200,13 +200,18 @@ class BootScene extends Phaser.Scene {
     this.game.canvas.style.pointerEvents='';
     document.getElementById('luchaGameOverOverlay')?.remove();
     document.getElementById('bossGameOverOverlay')?.remove();
+    this._started=false; // always reset on create
 
     // Force fill canvas regardless of actual image size
     this.add.image(0, 0, 'title_bg').setOrigin(0,0).setDisplaySize(width, height);
-    // Start theme music
-    this.sound.getAll().forEach(s=>s.stop());
-    window._theme1 = this.sound.add('theme1',{loop:true,volume:0.65});
-    window._theme1.play();
+
+    // Start theme music — safe re-add
+    try{
+      this.sound.getAll().forEach(s=>s.stop());
+      if(this.sound.get('theme1')) this.sound.remove(this.sound.get('theme1'));
+      window._theme1 = this.sound.add('theme1',{loop:true,volume:0.65});
+      window._theme1.play();
+    }catch(e){ console.warn('Audio init failed:',e); }
 
     // Subtle dark vignette at bottom for prompt legibility
     const vign=this.add.rectangle(width/2,height,width,height*0.28,0x000000,0.55)
@@ -234,7 +239,7 @@ class BootScene extends Phaser.Scene {
     const img=this.children.list[0];
     this.tweens.add({targets:img,scaleX:img.scaleX*1.015,scaleY:img.scaleY*1.015,duration:3000,yoyo:true,repeat:-1,ease:'Sine.InOut'});
 
-    // Start on any input
+    // Start function — safe, no delayedCall wrapper so it's always ready
     const start=()=>{
       if(this._started) return;
       this._started=true;
@@ -242,10 +247,9 @@ class BootScene extends Phaser.Scene {
       this.cameras.main.fadeOut(700,0,0,0);
       this.time.delayedCall(750,()=>{ this.scene.start('ChicosFightScene',{music:window._theme1}); });
     };
-    this.time.delayedCall(500,()=>{
-      this.input.keyboard.on('keydown',(e)=>{ if(e.key!=='`') start(); });
-      this.input.on('pointerdown',start);
-    });
+    // Register input immediately — no delay
+    this.input.keyboard.on('keydown',(e)=>{ if(e.key!=='`') start(); });
+    this.input.on('pointerdown',()=>{ start(); });
 
     // ── DEV MENU — backtick key ──
     let devOpen=false;

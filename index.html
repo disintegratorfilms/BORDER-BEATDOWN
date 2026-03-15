@@ -666,6 +666,7 @@ class ChicosFightScene extends Phaser.Scene {
     this.hero.play('lr-idle');
     this.heroFacing=1;
     this.heroHealth=12;
+    this._halfHealthBank=0; // accumulates 0.5 per kill
     this.heroInvincible=false;
     this.heroMinX=40; this.heroMaxX=this.worldWidth-40;
     this._jumpVY=0; this._groundY=this.hero.y;
@@ -715,7 +716,7 @@ class ChicosFightScene extends Phaser.Scene {
     this.add.text(20,82,'PWR',{fontFamily:'Arial',fontSize:'14px',color:'#ffaa00'}).setScrollFactor(0).setDepth(1000);
     this.heroPowerBars=[];
     for(let i=0;i<10;i++) this.heroPowerBars.push(this.add.rectangle(54+i*(BW+BG),89,BW,BH,0x332200).setScrollFactor(0).setDepth(1000));
-    this.add.text(20,112,'LEVEL 1 — CHICO\'S TACOS',{fontFamily:'Arial',fontSize:'12px',color:'#ff8800'}).setScrollFactor(0).setDepth(1000);
+    this.add.text(20,112,'LEVEL 1 — THE BARRIO',{fontFamily:'Arial',fontSize:'12px',color:'#ff8800'}).setScrollFactor(0).setDepth(1000);
     this.powerHint=this.add.text(20,height-22,'[G] BODY SLAM — charge up first',{fontFamily:'Arial',fontSize:'18px',color:'#554400'}).setScrollFactor(0).setDepth(1000).setOrigin(0,1);
     this.waveText=this.add.text(width/2,14,'',{fontFamily:'Arial Black',fontSize:'22px',color:'#ffdd44',align:'center'}).setOrigin(0.5,0).setScrollFactor(0).setDepth(1000);
     this._scoreLabel=this.add.text(width-28,16,'0000000',{fontFamily:'"Arial Black",Arial,sans-serif',fontSize:'52px',color:'#ffee00',stroke:'#ffffff',strokeThickness:6,align:'right',shadow:{offsetX:0,offsetY:0,color:'#ff8800',blur:18,fill:true}}).setOrigin(1,0).setScrollFactor(0).setDepth(5000);
@@ -839,6 +840,17 @@ class ChicosFightScene extends Phaser.Scene {
     this._lastDeathSfx=1-this._lastDeathSfx;
     this._playSfx(dKey,0.75);
     this._addScore(700,e.x,e.y-60);
+    // +0.5 health per kill
+    this._halfHealthBank+=0.5;
+    if(this._halfHealthBank>=1&&this.heroHealth<12){
+      this._halfHealthBank-=1;
+      this.heroHealth=Math.min(12,this.heroHealth+1);
+      this.heroHealthBars[this.heroHealth-1]?.setFillStyle(0xff3333);
+      // Small heal flash
+      const hx=54+(this.heroHealth-1)*25+11, hy=59;
+      const healFlash=this.add.rectangle(hx,hy,22,12,0x44ff88,1).setScrollFactor(0).setDepth(1001);
+      this.tweens.add({targets:healFlash,alpha:0,duration:600,onComplete:()=>healFlash.destroy()});
+    }
     this.cameras.main.shake(220,0.020);
     this.hero.anims.pause();
     this.time.delayedCall(80,()=>{ if(!this.gameOver) this.hero.anims.resume(); });
@@ -1832,10 +1844,24 @@ class ChicosBossScene extends Phaser.Scene {
     for(let i=0;i<10;i++) this.heroPowerBars.push(this.add.rectangle(54+i*25,89,22,12,0x332200).setScrollFactor(0).setDepth(1000));
     this._scoreLabel=this.add.text(width-28,16,'0000000',{fontFamily:'"Arial Black"',fontSize:'52px',color:'#ffee00',stroke:'#ffffff',strokeThickness:6,align:'right',shadow:{offsetX:0,offsetY:0,color:'#ff8800',blur:18,fill:true}}).setOrigin(1,0).setScrollFactor(0).setDepth(5000);
     this._scoreSwelling=false;
-    this.add.text(width/2,14,'MECHA EDGAR',{fontFamily:'"Arial Black"',fontSize:'22px',color:'#ff4400',stroke:'#000',strokeThickness:5}).setOrigin(0.5,0).setScrollFactor(0).setDepth(1000);
-    this._bossHpBg=this.add.rectangle(width/2,46,600,22,0x330000).setOrigin(0.5,0).setScrollFactor(0).setDepth(1000);
-    this._bossHpBar=this.add.rectangle(width/2-300,46,600,22,0xff2200).setOrigin(0,0).setScrollFactor(0).setDepth(1001);
-    this.add.rectangle(width/2,46,600,22,0).setStrokeStyle(2,0xff6600).setOrigin(0.5,0).setScrollFactor(0).setDepth(1002);
+    // Boss name label
+    this.add.text(width/2,10,'MECHA EDGAR',{fontFamily:'"Arial Black"',fontSize:'20px',
+      color:'#ff4400',stroke:'#000',strokeThickness:5}).setOrigin(0.5,0).setScrollFactor(0).setDepth(1000);
+    // HP label left
+    this.add.text(width/2-308,40,'HP',{fontFamily:'Arial',fontSize:'13px',color:'#ff8888',
+      stroke:'#000',strokeThickness:3}).setOrigin(1,0).setScrollFactor(0).setDepth(1000);
+    // Bar background
+    this.add.rectangle(width/2,40,620,28,0x1a0000).setOrigin(0.5,0).setScrollFactor(0).setDepth(1000);
+    // Damage ghost bar (shows recent damage in dark red)
+    this._bossHpGhost=this.add.rectangle(width/2-310,40,620,28,0x550000).setOrigin(0,0).setScrollFactor(0).setDepth(1001);
+    // Active HP bar
+    this._bossHpBar=this.add.rectangle(width/2-310,40,620,28,0xff2200).setOrigin(0,0).setScrollFactor(0).setDepth(1002);
+    // Border
+    this.add.rectangle(width/2,40,620,28,0).setStrokeStyle(2,0xff6600).setOrigin(0.5,0).setScrollFactor(0).setDepth(1003);
+    // HP number text
+    this._bossHpText=this.add.text(width/2,40+14,`${this.BOSS_MAX_HP} / ${this.BOSS_MAX_HP}`,{
+      fontFamily:'"Arial Black"',fontSize:'13px',color:'#ffffff',stroke:'#000',strokeThickness:3
+    }).setOrigin(0.5,0.5).setScrollFactor(0).setDepth(1004);
     this.powerHint=this.add.text(20,height-22,'[G] BODY SLAM — charge up first',{fontFamily:'Arial',fontSize:'18px',color:'#554400'}).setScrollFactor(0).setDepth(1000).setOrigin(0,1);
 
     // Input
@@ -2052,9 +2078,18 @@ class ChicosBossScene extends Phaser.Scene {
     if(this.bossDefeated) return; // allow hits during knockback
     this.bossHp=Math.max(0,this.bossHp-dmg);
     const pct=this.bossHp/this.BOSS_MAX_HP;
-    this._bossHpBar.width=600*pct;
-    this._bossHpBar.setDisplaySize(600*pct,22);
-    this._bossHpBar.setFillStyle(pct>0.5?0xff2200:pct>0.25?0xff8800:0xffff00);
+    // Update HP bar, ghost bar, and number
+    this._bossHpBar.setDisplaySize(620*pct,28);
+    this._bossHpBar.setFillStyle(0xffffff); // flash white on hit
+    this.time.delayedCall(80,()=>{
+      if(!this._bossHpBar.active) return;
+      this._bossHpBar.setFillStyle(pct>0.5?0xff2200:pct>0.25?0xff8800:0xffdd00);
+    });
+    this._bossHpText.setText(this.bossHp+' / '+this.BOSS_MAX_HP);
+    this.time.delayedCall(400,()=>{
+      if(!this._bossHpGhost||!this._bossHpGhost.active) return;
+      this.tweens.add({targets:this._bossHpGhost,displayWidth:620*pct,duration:300,ease:'Sine.Out'});
+    });
     this.boss.setTint(0xffffff); this.time.delayedCall(80,()=>{ if(this.boss.active)this.boss.clearTint(); });
     this.cameras.main.shake(100,0.012);
     window.SCORE=(window.SCORE||0)+200;

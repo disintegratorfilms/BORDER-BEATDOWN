@@ -16,7 +16,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
 <meta name="mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
-<meta name="apple-mobile-web-app-title" content="El Rayo Del Paso" />
+  <meta name="apple-mobile-web-app-title" content="Border Beatdown" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icon-180.png">
+  <link rel="apple-touch-icon" sizes="120x120" href="icon-120.png">
+  <link rel="apple-touch-icon" sizes="152x152" href="icon-152.png">
+  <link rel="apple-touch-icon" sizes="167x167" href="icon-167.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="icon-180.png">
 <title>El Rayo Del Paso</title>
 <style>
   *{ margin:0; padding:0; box-sizing:border-box; }
@@ -43,12 +50,21 @@ window.initMobileControls = function(scene){
   if(!window.IS_MOBILE) return;
   const {width:W, height:H} = scene.scale;
   const MID_X = W * 0.5;
-  const RADIUS = 90, DEAD = 22;
+  const RADIUS = 100, DEAD = 24;
   const LONG_MS = 600, TWO_PUNCH_MS = 220;
+  // Gesture thresholds
+  const SWIPE_UP_PX = 55;   // px upward on joystick = jump
+  const KICK_SWIPE_PX = 50; // px upward on attack side = V-kick
 
   const gfx = scene.add.graphics().setDepth(9999).setScrollFactor(0);
+
+  // Joystick state
   let joyActive=false, joyPtr=null, joyOX=0, joyOY=0;
-  let atkPtr=null, atkDownAt=0, pwrFired=false, twoPunchFired=false, pwrCharging=false;
+  let joyStartY=0, jumpFired=false;
+
+  // Attack button state
+  let atkPtr=null, atkDownAt=0, atkStartY=0;
+  let pwrFired=false, twoPunchFired=false, pwrCharging=false, kickFired=false;
 
   let fadeTimer=null, alpha=1;
   function resetFade(){
@@ -57,30 +73,46 @@ window.initMobileControls = function(scene){
   }
   resetFade();
 
+  // Draw hint labels on first render
+  let hintsDrawn=false;
+  const hintStyle={fontFamily:'"Arial Black",Arial',fontSize:'22px',color:'#ffffff',
+    stroke:'#000000',strokeThickness:4,alpha:0.5};
+
   function drawJoy(){
     gfx.clear(); gfx.setAlpha(alpha);
-    const rc=pwrCharging?0xffdd44:0x88bbff;
-    const ra=pwrCharging?0.55:0.22;
-    gfx.lineStyle(3,rc,ra);
-    gfx.strokeCircle(W*0.82,H*0.82,56);
-    gfx.fillStyle(rc,pwrCharging?0.18:0.07);
-    gfx.fillCircle(W*0.82,H*0.82,56);
+
+    // ── Left side: joystick ring ──
+    gfx.lineStyle(2,0xaaccff,0.25);
+    gfx.strokeCircle(W*0.16,H*0.78,RADIUS);
+    gfx.fillStyle(0xaaccff,0.06);
+    gfx.fillCircle(W*0.16,H*0.78,RADIUS);
+
+    // ── Right side: attack zone ring ──
+    const rc=pwrCharging?0xffdd44:0xff8844;
+    const ra=pwrCharging?0.50:0.20;
+    gfx.lineStyle(2,rc,ra);
+    gfx.strokeCircle(W*0.84,H*0.78,RADIUS);
+    gfx.fillStyle(rc,pwrCharging?0.15:0.05);
+    gfx.fillCircle(W*0.84,H*0.78,RADIUS);
+
     if(!joyActive) return;
-    gfx.lineStyle(2,0xffffff,0.40);
+
+    // Active joystick
+    gfx.lineStyle(2,0xffffff,0.35);
     gfx.strokeCircle(joyOX,joyOY,RADIUS);
-    gfx.fillStyle(0xffffff,0.08);
+    gfx.fillStyle(0xffffff,0.06);
     gfx.fillCircle(joyOX,joyOY,RADIUS);
-    const tdx=window.VPAD.left?-RADIUS*0.6:window.VPAD.right?RADIUS*0.6:0;
-    const tdy=window.VPAD.up?-RADIUS*0.6:window.VPAD.down?RADIUS*0.6:0;
-    gfx.fillStyle(0xffffff,0.55);
-    gfx.fillCircle(joyOX+tdx,joyOY+tdy,24);
+    const tdx=window.VPAD.left?-RADIUS*0.55:window.VPAD.right?RADIUS*0.55:0;
+    const tdy=window.VPAD.up?-RADIUS*0.55:window.VPAD.down?RADIUS*0.55:0;
+    gfx.fillStyle(0xffffff,0.60);
+    gfx.fillCircle(joyOX+tdx,joyOY+tdy,26);
   }
 
   function onUpdate(){
     if(atkPtr===null){ pwrCharging=false; return; }
     const held=scene.time.now-atkDownAt;
     if(!pwrFired&&held>=LONG_MS){
-      pwrFired=true; twoPunchFired=true; pwrCharging=false;
+      pwrFired=true; twoPunchFired=true; kickFired=true; pwrCharging=false;
       window.VPAD_QUEUE.push('power');
     } else if(!twoPunchFired&&held>=TWO_PUNCH_MS){
       twoPunchFired=true; pwrCharging=true;
@@ -92,23 +124,54 @@ window.initMobileControls = function(scene){
 
   scene.input.on('pointerdown',function(ptr){
     resetFade();
-    if(ptr.x<MID_X){
-      if(!joyActive){ joyActive=true; joyPtr=ptr.id; joyOX=ptr.x; joyOY=ptr.y; }
+    if(ptr.x < MID_X){
+      // Left side — joystick
+      if(!joyActive){
+        joyActive=true; joyPtr=ptr.id;
+        joyOX=ptr.x; joyOY=ptr.y;
+        joyStartY=ptr.y; jumpFired=false;
+      }
     } else {
-      if(atkPtr===null){ atkPtr=ptr.id; atkDownAt=scene.time.now; pwrFired=false; twoPunchFired=false; pwrCharging=false; }
+      // Right side — attack/kick
+      if(atkPtr===null){
+        atkPtr=ptr.id; atkDownAt=scene.time.now;
+        atkStartY=ptr.y;
+        pwrFired=false; twoPunchFired=false; pwrCharging=false; kickFired=false;
+      }
     }
   });
+
   scene.input.on('pointermove',function(ptr){
-    if(ptr.id!==joyPtr) return;
     resetFade();
-    const dx=ptr.x-joyOX, dy=ptr.y-joyOY;
-    window.VPAD.left=dx<-DEAD; window.VPAD.right=dx>DEAD;
-    window.VPAD.up=dy<-DEAD;   window.VPAD.down=dy>DEAD;
-  });
-  scene.input.on('pointerup',function(ptr){
-    if(ptr.id===joyPtr){ joyActive=false; joyPtr=null; window.VPAD.left=window.VPAD.right=window.VPAD.up=window.VPAD.down=false; }
+    if(ptr.id===joyPtr){
+      const dx=ptr.x-joyOX, dy=ptr.y-joyOY;
+      window.VPAD.left=dx<-DEAD; window.VPAD.right=dx>DEAD;
+      window.VPAD.up=dy<-DEAD;   window.VPAD.down=dy>DEAD;
+      // Swipe UP on joystick = JUMP
+      const swipeUp=joyStartY-ptr.y;
+      if(!jumpFired&&swipeUp>SWIPE_UP_PX){
+        jumpFired=true;
+        window.VPAD_QUEUE.push('jump');
+      }
+    }
     if(ptr.id===atkPtr){
-      if(!twoPunchFired&&!pwrFired) window.VPAD_QUEUE.push('attack');
+      // Swipe UP on attack side = V running jumpkick
+      const swipeUp=atkStartY-ptr.y;
+      if(!kickFired&&!pwrFired&&swipeUp>KICK_SWIPE_PX){
+        kickFired=true; twoPunchFired=true; pwrCharging=false;
+        window.VPAD_QUEUE.push('kick');
+      }
+    }
+  });
+
+  scene.input.on('pointerup',function(ptr){
+    if(ptr.id===joyPtr){
+      joyActive=false; joyPtr=null;
+      window.VPAD.left=window.VPAD.right=window.VPAD.up=window.VPAD.down=false;
+      jumpFired=false;
+    }
+    if(ptr.id===atkPtr){
+      if(!twoPunchFired&&!pwrFired&&!kickFired) window.VPAD_QUEUE.push('attack');
       atkPtr=null; pwrCharging=false;
     }
   });
@@ -1274,8 +1337,8 @@ class ChicosFightScene extends Phaser.Scene {
     const _mEvt=window.IS_MOBILE?(window.VPAD_QUEUE[0]||null):null;
     const _atkNow=window.IS_MOBILE?(_mEvt==='attack'||_mEvt==='two_punch'?(window.VPAD_QUEUE.shift(),true):false):Phaser.Input.Keyboard.JustDown(this.attackKey);
     const _specNow=window.IS_MOBILE?(window.VPAD_QUEUE[0]==='power'?(window.VPAD_QUEUE.shift(),true):false):Phaser.Input.Keyboard.JustDown(this.specialKey);
-    const _jumpNow=Phaser.Input.Keyboard.JustDown(this.jumpKey);
-    const _vNow   =Phaser.Input.Keyboard.JustDown(this.vKey);
+    const _jumpNow=window.IS_MOBILE?(window.VPAD_QUEUE[0]==='jump'?(window.VPAD_QUEUE.shift(),true):false)||Phaser.Input.Keyboard.JustDown(this.jumpKey):Phaser.Input.Keyboard.JustDown(this.jumpKey);
+    const _vNow=window.IS_MOBILE?(window.VPAD_QUEUE[0]==='kick'?(window.VPAD_QUEUE.shift(),true):false)||Phaser.Input.Keyboard.JustDown(this.vKey):Phaser.Input.Keyboard.JustDown(this.vKey);
 
     // Jump physics
     if(this.isJumping&&!this.isSpecial&&this._jumpVY!==0){
@@ -2076,8 +2139,8 @@ class ChicosBossScene extends Phaser.Scene {
     const _mEvt=window.IS_MOBILE?(window.VPAD_QUEUE[0]||null):null;
     const _atkNow=window.IS_MOBILE?(_mEvt==='attack'||_mEvt==='two_punch'?(window.VPAD_QUEUE.shift(),true):false):Phaser.Input.Keyboard.JustDown(this.attackKey);
     const _specNow=window.IS_MOBILE?(window.VPAD_QUEUE[0]==='power'?(window.VPAD_QUEUE.shift(),true):false):Phaser.Input.Keyboard.JustDown(this.specialKey);
-    const _jumpNow=Phaser.Input.Keyboard.JustDown(this.jumpKey);
-    const _vNow=Phaser.Input.Keyboard.JustDown(this.vKey);
+    const _jumpNow=window.IS_MOBILE?(window.VPAD_QUEUE[0]==='jump'?(window.VPAD_QUEUE.shift(),true):false)||Phaser.Input.Keyboard.JustDown(this.jumpKey):Phaser.Input.Keyboard.JustDown(this.jumpKey);
+    const _vNow=window.IS_MOBILE?(window.VPAD_QUEUE[0]==='kick'?(window.VPAD_QUEUE.shift(),true):false)||Phaser.Input.Keyboard.JustDown(this.vKey):Phaser.Input.Keyboard.JustDown(this.vKey);
     if(this.isJumping&&this._jumpVY!==0){ this._jumpVY+=1600*(delta/1000);this.hero.y+=this._jumpVY*(delta/1000);if(this.hero.y>=this._groundY){this.hero.y=this._groundY;this._land();} }
     let moving=false;
     if(!this.isAttacking&&!this.isKnockedBack&&!this.isSpecial&&!this._landing){

@@ -538,11 +538,7 @@ class ChicosFightScene extends Phaser.Scene {
     this.load.audio('sfx_rayo_kick',   'assets/luchador/rayo_kick.mp3');
     this.load.audio('sfx_car_pass',    'assets/car_passing.mp3');
     this.load.audio('sfx_car_stereo',  'assets/audiofromcarstereo.mp3');
-    this.load.image('sky','assets/sky.png');
-    this.load.image('mountains','assets/mountains_final.png');
-    this.load.image('street_bg1','assets/bg1_final.png');
     this.load.image('street_bg2','assets/bg2_final.png'); // 1344x768 RGB full scene
-    this.load.image('street_bg3','assets/bg3_final.png');
     // El Rayo — 299x398, 5x5, 25 frames
     this.load.spritesheet('lr_idle',     'assets/luchador/idle.png',                 {frameWidth:299,frameHeight:398});
     this.load.spritesheet('lr_run',      'assets/luchador/Run-to-the-right-at-.png', {frameWidth:299,frameHeight:398});
@@ -602,31 +598,6 @@ class ChicosFightScene extends Phaser.Scene {
 
     /* ── Background layers — 4 depth parallax ── */
     this.cameras.main.setBounds(0,0,this.worldWidth,height);
-
-    // Layer 0: sky — TileSprite, very slow scroll (almost fixed)
-    // sky.png is 1536x1024 — scale to fill full screen height
-    const skySrc=this.textures.get('sky').getSourceImage();
-    const skyScale=height/skySrc.height;
-    const skyTileW=skySrc.width*skyScale;
-    const skyTile=this.add.tileSprite(0,0,this.worldWidth,height,'sky')
-      .setOrigin(0,0).setDepth(0).setScrollFactor(0.05); // almost fixed — barely drifts
-    skyTile.setTileScale(skyScale,skyScale);
-
-    // Layer 1: mountains — alpha PNG over sky, medium parallax
-    // mountains_alpha.png is 1024x768 with transparent black sky
-    // Pin bottom of mountains to ~75% of screen height (sit on horizon)
-    const mtSrc=this.textures.get('mountains').getSourceImage(); // 1024x768 RGBA
-    const mtScale=height/mtSrc.height;      // scale to full screen height
-    const mtDispW=mtSrc.width*mtScale;       // proportional width
-    const mtDispH=mtSrc.height*mtScale;
-    // Tile mountains across world — place enough copies
-    let mtx=0;
-    while(mtx<this.worldWidth+mtDispW){
-      this.add.image(mtx,0,'mountains')
-        .setOrigin(0,0).setDisplaySize(mtDispW,mtDispH)
-        .setDepth(1).setScrollFactor(0.2); // slow parallax — behind buildings
-      mtx+=mtDispW;
-    }
 
     // Layer 2: street background — bg2 is 1344x768 full scene, tile across world
     const bgSrc=this.textures.get('street_bg2').getSourceImage(); // 1344x768
@@ -2441,6 +2412,19 @@ new Phaser.Game({
   canvasStyle: 'display:block;outline:none;',
   scene: [BootScene, CutsceneScene, ChicosFightScene, ChicosBossScene]
 });
+
+// ── Audio context unlock — required by all browsers ──
+(function(){
+  const unlock=()=>{
+    const ctx=game.sound&&game.sound.context;
+    if(ctx&&ctx.state==='suspended'){
+      ctx.resume().then(()=>console.log('AudioContext resumed:',ctx.state));
+    }
+  };
+  document.addEventListener('pointerdown',unlock,{capture:true,once:true});
+  document.addEventListener('keydown',unlock,{capture:true,once:true});
+  document.addEventListener('touchstart',unlock,{capture:true,once:true,passive:true});
+})();
 </script>
 </body>
 </html>

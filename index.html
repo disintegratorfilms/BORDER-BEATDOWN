@@ -2,6 +2,17 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-MFS24CVFDL"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-MFS24CVFDL');
+    window._gtrack = function(name, params){
+      try{ gtag('event', name, params||{}); }catch(e){}
+    };
+  </script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
 <meta name="mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -164,6 +175,7 @@ class BootScene extends Phaser.Scene {
     const start=()=>{
       if(this._started) return;
       this._started=true;
+      window._gtrack('game_start',{method:'main_menu'});
       this.cameras.main.fadeOut(700,0,0,0);
       this.time.delayedCall(750,()=>{ this.scene.start('ChicosFightScene',{music:window._theme1}); });
     };
@@ -200,11 +212,13 @@ class BootScene extends Phaser.Scene {
 
     const goFight=()=>{
       if(this._started) return; this._started=true;
+      window._gtrack('game_start',{method:'dev_menu_fight'});
       this.cameras.main.fadeOut(600,0,0,0);
       this.time.delayedCall(650,()=>{ this.scene.start('ChicosFightScene',{music:window._theme1}); });
     };
     const goBoss=()=>{
       if(this._started) return; this._started=true;
+      window._gtrack('game_start',{method:'dev_menu_boss'});
       this.cameras.main.fadeOut(600,0,0,0);
       this.time.delayedCall(650,()=>{ this.sound.getAll().forEach(s=>s.stop()); this.scene.start('ChicosBossScene'); });
     };
@@ -965,6 +979,7 @@ class ChicosFightScene extends Phaser.Scene {
             });
 
             this._addScore(500,slamX,groundY-80);
+            window._gtrack('body_slam',{scene:'street_fight',score:window.SCORE||0});
             this._showAnnounce('BODY SLAM!','#ff8800');
             this.heroPower=0; this._updatePowerBars();
 
@@ -1025,6 +1040,7 @@ class ChicosFightScene extends Phaser.Scene {
   _triggerDeath(){
     if(this.gameOver) return;
     this.gameOver=true;
+    window._gtrack('player_death',{scene:'street_fight',wave:this.wavesTriggered||0,score:window.SCORE||0});
     if(this._invincFlash){ this._invincFlash.stop(); this._invincFlash=null; }
     this.hero.setAlpha(1); this.hero.play('lr-knockback',true);
     this.cameras.main.shake(600,0.028);
@@ -1086,6 +1102,7 @@ class ChicosFightScene extends Phaser.Scene {
     const animKey=is3?'combo-3x':'combo-6x';
     const texKey =is3?'combo3x':'combo6x';
     const scale  =is3?2.5:3.0;
+    window._gtrack('combo_hit',{count:this._combo,type:is3?'3x':'6x+',scene:'street_fight'});
 
     // Safety — verify texture and anim exist before showing
     if(!this.textures.exists(texKey)||!this.anims.exists(animKey)) return;
@@ -1200,6 +1217,7 @@ class ChicosFightScene extends Phaser.Scene {
         const dx = Math.abs(car.x - this.hero.x);
         // Hero and car are on different Y planes — check X only
         if(dx < 260){
+          window._gtrack('car_hit',{wave:this.wavesTriggered||0,score:window.SCORE||0});
           this._damageHero();
           this.cameras.main.shake(400,0.030);
           // Big hit — knock El Rayo back hard
@@ -1237,9 +1255,11 @@ class ChicosFightScene extends Phaser.Scene {
     // All waves cleared
     if(!this.allWavesCleared&&this.wavesTriggered>=this.waveConfig.length&&this.enemies.filter(e=>e.active&&!e.dead).length===0){
       this.allWavesCleared=true;
+      window._gtrack('wave_complete',{wave:this.wavesTriggered,score:window.SCORE||0,all_waves:true});
       this._showAnnounce('LEVEL CLEAR!','#44ffaa');
       this.time.delayedCall(2500,()=>{
-        this.cameras.main.fadeOut(900,0,0,0);
+        window._gtrack('level_complete',{level:'chicos_street',score:window.SCORE||0});
+      this.cameras.main.fadeOut(900,0,0,0);
         // Fade out theme1 before boss
         if(this._music&&this._music.isPlaying){ this.tweens.add({targets:this._music,volume:0,duration:900}); }
         this.time.delayedCall(950,()=>{ this.sound.getAll().forEach(s=>s.stop()); this.scene.start('ChicosBossScene'); });
@@ -1556,6 +1576,7 @@ class ChicosBossScene extends Phaser.Scene {
     const animKey=is3?'combo-3x':'combo-6x';
     const texKey =is3?'combo3x':'combo6x';
     const scale  =is3?2.5:3.0;
+    window._gtrack('combo_hit',{count:this._combo,type:is3?'3x':'6x+',scene:'boss_fight'});
 
     if(!this.textures.exists(texKey)) return;
     if(!this.anims.exists(animKey)){
@@ -1748,6 +1769,7 @@ class ChicosBossScene extends Phaser.Scene {
     this._scoreLabel.setText(String(window.SCORE).padStart(7,'0'));
     if(this.bossHp<=this.BOSS_MAX_HP/2&&this._bossPhase===1){
       this._bossPhase=2;
+      window._gtrack('boss_phase_2',{score:window.SCORE||0});
       this._showAnnounce('PHASE 2!','#ff0000');
       this.cameras.main.shake(600,0.030);
       this.boss.setTint(0xff4400); this.time.delayedCall(500,()=>{ if(this.boss.active)this.boss.clearTint(); });
@@ -1780,6 +1802,7 @@ class ChicosBossScene extends Phaser.Scene {
 
   _triggerVictory(){
     const {width,height}=this.scale;
+    window._gtrack('boss_defeated',{score:window.SCORE||0});
     this._showAnnounce('K.O.!!','#ffdd00');
     if(this._bossMusic&&this._bossMusic.isPlaying){ this.tweens.add({targets:this._bossMusic,volume:0,duration:1500}); }
     window.SCORE=(window.SCORE||0)+5000;
@@ -1820,6 +1843,7 @@ class ChicosBossScene extends Phaser.Scene {
   _triggerHeroDeath(){
     if(this.gameOver) return;
     this.gameOver=true;
+    window._gtrack('player_death',{scene:'boss_mecha_edgar',boss_hp:this.bossHp||0,score:window.SCORE||0});
     this.hero.play('lr-knockback',true);
     this.cameras.main.shake(600,0.030);
     this.time.delayedCall(1200,()=>{
@@ -1976,6 +2000,7 @@ class ChicosBossScene extends Phaser.Scene {
         this.tweens.add({targets:this.hero,y:groundY,duration:160,ease:'Cubic.In',onComplete:()=>{
           if(!this.isSpecial) return;
           this.hero.setDepth(50); this.cameras.main.shake(600,0.045);
+          window._gtrack('body_slam',{scene:'boss_fight',score:window.SCORE||0});
           this._hitBoss(4); this._spawnHitSparks(slamX,groundY-80);
           this._showAnnounce('BODY SLAM!','#ff8800');
           this.heroPower=0; this._updatePowerBars();

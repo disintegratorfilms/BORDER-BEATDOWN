@@ -338,7 +338,7 @@ class CutsceneScene extends Phaser.Scene {
     this.add.rectangle(0,0,width,height,0x000000).setOrigin(0,0).setDepth(0);
 
     // Preload cutscene music ref
-    this._csMusic=this.sound.add('cs_music',{loop:false,volume:0});
+    this._csMusic=this.sound.add('cs_music',{loop:true,volume:0});
 
     // Build skip button — DOM overlay, lower right
     this._skipBtn=document.createElement('div');
@@ -408,9 +408,9 @@ class CutsceneScene extends Phaser.Scene {
       // Zoom tween — 1.0 → 1.08 over hold+fade duration
       this._zoomTween=this.tweens.add({
         targets:img,
-        displayWidth:width*1.12*1.08,
-        displayHeight:height*1.12*1.08,
-        duration:holdMs+800,
+        displayWidth:width*1.12*1.04,
+        displayHeight:height*1.12*1.04,
+        duration:(holdMs+800)*2,
         ease:'Linear'
       });
       // Hold then fade out
@@ -459,6 +459,7 @@ class ChicosFightScene extends Phaser.Scene {
 
   preload(){
     this.load.image('chicos_bg','assets/chicos_bg.png');
+    if(!this.cache.audio.exists('theme1')) this.load.audio('theme1','assets/theme_1.mp3');
     this.load.spritesheet('car','assets/car.png',{frameWidth:280,frameHeight:103});
     // Combo sprites
     if(!this.textures.exists('combo3x')) this.load.spritesheet('combo3x','assets/combo/combo3x.png',{frameWidth:128,frameHeight:128});
@@ -1377,18 +1378,51 @@ class ChicosFightScene extends Phaser.Scene {
     // Speed increases slightly each wave
     const speed = 800 + this.wavesTriggered * 60;
 
-    // ── Warning sign — big, centered, hard to miss ──
-    const warn = this.add.text(width/2, height*0.40, '⚠  CAR INCOMING!  ⚠', {
-      fontFamily:'"Arial Black",Arial,sans-serif',
-      fontSize:'72px', color:'#ffdd00',
-      stroke:'#ff0000', strokeThickness:10,
-      shadow:{offsetX:0,offsetY:0,color:'#ff6600',blur:30,fill:true}
-    }).setOrigin(0.5).setDepth(3000).setScrollFactor(0).setAlpha(0);
+    // ── Warning — 4 seconds, arrows from right ──
+    const warnDuration = 4000;
+    const warnContainer = this.add.container(0,0).setDepth(3000).setScrollFactor(0);
 
-    // Flash in and out
-    this.tweens.add({targets:warn, alpha:1, duration:200, yoyo:true, repeat:7,
-      onComplete:()=>{ warn.destroy(); }
+    // Dark band across road area
+    const band = this.add.rectangle(width/2, height*0.80, width, height*0.22, 0x000000, 0.55)
+      .setOrigin(0.5,0.5).setScrollFactor(0).setDepth(2999);
+
+    // Main warning text — centered
+    const warnText = this.add.text(width/2, height*0.78, '⚠  CAR COMING FROM THE RIGHT  ⚠', {
+      fontFamily:'"Arial Black",Arial,sans-serif',
+      fontSize:'54px', color:'#ffdd00',
+      stroke:'#cc0000', strokeThickness:8,
+      shadow:{offsetX:0,offsetY:0,color:'#ff6600',blur:20,fill:true}
+    }).setOrigin(0.5,0.5).setScrollFactor(0).setDepth(3000).setAlpha(0);
+
+    // Arrows pointing left — animated sliding from right edge
+    const arrowY = height*0.88;
+    const arrows=[];
+    for(let i=0;i<5;i++){
+      const a=this.add.text(width-60-i*90, arrowY, '◄', {
+        fontFamily:'"Arial Black"',fontSize:'52px',color:'#ff3300',
+        stroke:'#ffaa00',strokeThickness:4
+      }).setOrigin(0.5,0.5).setScrollFactor(0).setDepth(3001).setAlpha(0);
+      arrows.push(a);
+    }
+
+    // Pulse warning text
+    this.tweens.add({targets:warnText, alpha:1, duration:300,
+      onComplete:()=>{ this.tweens.add({targets:warnText,alpha:0.4,duration:350,yoyo:true,repeat:-1}); }
     });
+    // Cascade arrows one by one
+    arrows.forEach((a,i)=>{
+      this.time.delayedCall(i*120,()=>{
+        this.tweens.add({targets:a,alpha:1,x:a.x-30,duration:300,ease:'Sine.Out'});
+        this.tweens.add({targets:a,alpha:0,duration:300,delay:warnDuration-400});
+      });
+    });
+
+    // Destroy all warning elements after warnDuration
+    this.time.delayedCall(warnDuration,()=>{
+      warnText.destroy(); band.destroy();
+      arrows.forEach(a=>a.destroy());
+    });
+
     // Car stereo — start at :32, fade in
     try{
       if(this._carStereo&&this._carStereo.isPlaying){ this._carStereo.stop(); }
@@ -1398,16 +1432,20 @@ class ChicosFightScene extends Phaser.Scene {
     }catch(e){}
 
     this._carCount++;
-    // Car spawns off right edge of camera view, in world space
+    // Car spawns after warning duration so player has full 4 seconds
     const spawnX = this.cameras.main.scrollX + width + 300;
-    const car = this.add.sprite(spawnX, carY, 'car')
-      .setScale(4.2).setOrigin(0.5, 1).setDepth(44);
-    car.play('car-drive');
-    car._speed = speed;
-    this._playSfx('sfx_car_pass',0.9);
-    car._warned = false;
-    car._dead = false;
-    this._cars.push(car);
+    // Delay actual car spawn to match warning duration
+    this.time.delayedCall(warnDuration,()=>{
+      if(this.gameOver||this.allWavesCleared) return;
+      const car = this.add.sprite(this.cameras.main.scrollX+width+300, carY, 'car')
+        .setScale(4.2).setOrigin(0.5, 1).setDepth(44);
+      car.play('car-drive');
+      car._speed = speed;
+      this._playSfx('sfx_car_pass',0.9);
+      car._warned = false;
+      car._dead = false;
+      this._cars.push(car);
+    });
 
   }
 
@@ -1610,6 +1648,7 @@ class ChicosBossScene extends Phaser.Scene {
   constructor(){ super('ChicosBossScene'); }
   preload(){
     this.load.image('chicos_bg','assets/chicos_bg.png');
+    if(!this.cache.audio.exists('theme1')) this.load.audio('theme1','assets/theme_1.mp3');
     this.load.spritesheet('lr_idle',     'assets/luchador/idle.png',                 {frameWidth:299,frameHeight:398});
     this.load.spritesheet('lr_run',      'assets/luchador/Run-to-the-right-at-.png', {frameWidth:299,frameHeight:398});
     this.load.spritesheet('lr_attack1',  'assets/luchador/attack1.png',              {frameWidth:299,frameHeight:398});
@@ -2074,7 +2113,9 @@ class ChicosBossScene extends Phaser.Scene {
   _fireStringStep(){
     if(this._strStep>=3) this._strStep=0;
     this._strStep++; this.isAttacking=true; this._strBuffered=false; this._hitFired=false;
-    this.hero.x+=this.heroFacing*12;
+    // Lunge 100px forward
+    const lungeX=Phaser.Math.Clamp(this.hero.x+this.heroFacing*100,this.heroMinX,this.heroMaxX);
+    this.tweens.add({targets:this.hero,x:lungeX,duration:180,ease:'Sine.Out'});
     if(this._strTimer) this._strTimer.remove();
     this._strTimer=this.time.delayedCall(1000,()=>{ this._strStep=0;this._strTimer=null; });
     const animMap={1:'lr-attack1',2:'lr-attack2',3:'lr-attack3'};
@@ -2097,7 +2138,7 @@ class ChicosBossScene extends Phaser.Scene {
   _checkBossHit(dmg=1){
     if(this._hitBossThisSwing||this.bossDefeated) return; // knockback no longer blocks hits
     const dx=(this.boss.x-this.hero.x)*this.heroFacing, dy=Math.abs(this.boss.y-this.hero.y);
-    if(dx>0&&dx<420&&dy<220){ this._hitBossThisSwing=true; this._hitBoss(dmg); this._spawnHitSparks(this.boss.x-this.heroFacing*40,this.boss.y-this.boss.displayHeight*0.5); this._bossUpdateCombo(); }
+    if(dx>0&&dx<360&&dy<160){ this._hitBossThisSwing=true; this._hitBoss(dmg); this._spawnHitSparks(this.boss.x-this.heroFacing*40,this.boss.y-this.boss.displayHeight*0.5); this._bossUpdateCombo(); }
   }
 
   _checkEdgarHits(dmg=1){
@@ -2143,20 +2184,20 @@ class ChicosBossScene extends Phaser.Scene {
     this._hitBossThisSwing=false;
     this._playSfxBoss('sfx_rayo_kick',0.85);
     this.hero.play('lr-jumpkick',true);
-    // Wide area hit — check boss and edgars
+    // Lunge across screen toward boss
+    const lungeTarget=Phaser.Math.Clamp(this.hero.x+this.heroFacing*500,this.heroMinX,this.heroMaxX);
+    this.tweens.add({targets:this.hero,x:lungeTarget,duration:400,ease:'Sine.Out'});
+    // Hit window during lunge
     this.time.delayedCall(200,()=>{
-      const HIT_X=500, HIT_Y=200;
-      this.enemies&&this.enemies.filter(e=>e.active&&!e.dead).forEach(e=>{
-        const dx=(e.x-this.hero.x)*this.heroFacing, dy=Math.abs(e.y-this.hero.y);
-        if(dx>-60&&dx<HIT_X&&dy<HIT_Y){ this._hitBoss&&this._hitBoss(2); }
-      });
       // Hit boss
       const bdx=(this.boss.x-this.hero.x)*this.heroFacing, bdy=Math.abs(this.boss.y-this.hero.y);
-      if(bdx>-60&&bdx<HIT_X&&bdy<HIT_Y&&!this._hitBossThisSwing){ this._hitBossThisSwing=true; this._hitBoss(2); this._bossUpdateCombo(); }
+      if(bdx>-80&&bdx<500&&bdy<220&&!this._hitBossThisSwing){
+        this._hitBossThisSwing=true; this._hitBoss(2); this._bossUpdateCombo();
+        this.cameras.main.shake(200,0.018);
+      }
       // Hit summoned edgars
       this._summonedEdgars.forEach(e=>e._hitThisSwing=false);
       this._checkEdgarHits(2);
-      this.cameras.main.shake(200,0.018);
     });
     // Safety clear
     this.time.delayedCall(1500,()=>{

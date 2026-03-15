@@ -767,14 +767,23 @@ class ChicosFightScene extends Phaser.Scene {
 
     /* ── Music — always start theme_1 fresh ── */
     this.sound.getAll().forEach(s=>s.stop());
-    try{
-      // Remove any stale instance first
-      const stale=this.sound.get('theme1');
-      if(stale) this.sound.remove(stale);
-      this._music=this.sound.add('theme1',{loop:true,volume:0});
-      this._music.play();
-      this.tweens.add({targets:this._music,volume:0.65,duration:1500});
-    }catch(e){ console.warn('Theme start failed:',e); }
+    const _startTheme=()=>{
+      try{
+        const stale=this.sound.get('theme1');
+        if(stale) this.sound.remove(stale);
+        this._music=this.sound.add('theme1',{loop:true,volume:0});
+        this._music.play();
+        this.tweens.add({targets:this._music,volume:0.65,duration:1500});
+        console.log('Theme started OK, playing:',this._music.isPlaying);
+      }catch(e){ console.warn('Theme start failed:',e); }
+    };
+    // Resume audio context first (browser requirement after user gesture)
+    if(this.sound.context&&this.sound.context.state==='suspended'){
+      this.sound.context.resume().then(()=>{ _startTheme(); });
+    } else {
+      // Small delay ensures scene is fully initialised before audio starts
+      this.time.delayedCall(100,()=>{ _startTheme(); });
+    }
 
     /* ── Combo system ── */
     this._combo=0;
